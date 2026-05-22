@@ -24,9 +24,10 @@ class PodcastListAPIView(APIView):
     # Anyone (even unauthenticated visitors) can read podcasts!
     def get(self, request):
         # We query the database to fetch all podcast records.
-        # We use select_related('creator') to optimize the database query,
-        # fetching the creator details in one go instead of hitting the database repeatedly (N+1 query problem).
-        podcasts = Podcast.objects.all().select_related('creator')
+        # We use select_related('creator') to fetch creator details in a single query.
+        # We also use prefetch_related('tracks') to pull all tracks in one go to prevent N+1 query loops.
+        # This double-optimization keeps our application incredibly fast and efficient!
+        podcasts = Podcast.objects.all().select_related('creator').prefetch_related('tracks')
         
         # We instantiate our PodcastSerializer with the list of podcasts.
         # 'many=True' tells DRF that we are passing a list/queryset of multiple objects, 
@@ -88,9 +89,10 @@ class PodcastDetailAPIView(APIView):
     def get_object(self, pk):
         try:
             # We query the database to fetch a specific podcast matching the pk ID.
-            # select_related('creator') pre-loads the creator's user account in the same SQL query.
-            # This is an important optimization to keep our database operations extremely fast!
-            return Podcast.objects.select_related('creator').get(pk=pk)
+            # We use select_related('creator') to pre-load the creator's user account in the same SQL query.
+            # We use prefetch_related('tracks') to pre-load all the tracks belonging to this specific podcast.
+            # This is an important optimization to keep our database operations extremely fast and robust!
+            return Podcast.objects.select_related('creator').prefetch_related('tracks').get(pk=pk)
         except Podcast.DoesNotExist:
             # If no podcast with this ID exists, we return None so the calling method
             # can respond to the client with a clear 404 error cleanly.
