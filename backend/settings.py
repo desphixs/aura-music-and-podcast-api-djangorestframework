@@ -55,6 +55,11 @@ INSTALLED_APPS = [
     # so that even if a hacker finds and steals that token later, our security system
     # will check the blacklist, recognize it, and block them from entering!
     'rest_framework_simplejwt.token_blacklist',
+    
+    # 'streaming' is the custom Django app we just created to manage our music and podcast catalog.
+    # Think of it like the catalog division in a media library: it handles podcasts, audio tracks,
+    # category tags, listener ratings, and extra profile details.
+    'streaming',
 ]
 
 MIDDLEWARE = [

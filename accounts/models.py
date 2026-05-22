@@ -4,6 +4,10 @@ from django.db import models
 # By inheriting from it, we don't have to build password hashing, security systems, 
 # or staff permissions from scratch—we just customize the parts we want to change!
 from django.contrib.auth.models import AbstractUser
+# post_save is the specific database signal triggered immediately after a model record is saved
+from django.db.models.signals import post_save
+# receiver is the decorator used to connect our signal handler functions to signals
+from django.dispatch import receiver
 
 # We define a custom User model class.
 # This represents a single user account in our application database.
@@ -38,3 +42,58 @@ class User(AbstractUser):
     def __str__(self):
         # We return the email field as the text representation of the user
         return self.email
+
+
+# We define the choices for the user roles in our application.
+# A user can either be a standard listener or a creator who can publish shows.
+ROLE_CHOICES = (
+    ('listener', 'Listener'),
+    ('creator', 'Creator'),
+)
+
+# The Profile model extends our custom User model with extra role-based fields.
+# Think of this like adding specialized details on a membership card.
+class Profile(models.Model):
+    # OneToOneField creates a strict one-to-one relationship with our User model.
+    # 'on_delete=models.CASCADE' means if a User is deleted, their profile is deleted too.
+    # 'related_name="profile"' allows us to access this model via user.profile.
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='profile'
+    )
+    # avatar_url is a TextField that will hold the secure URL of the image hosted on Cloudinary.
+    # We default it to an empty string in case they haven't uploaded an avatar yet.
+    avatar_url = models.TextField(blank=True, default='')
+    # role determines if the user is a listener or creator.
+    # We restrict choices to ROLE_CHOICES and set the default to 'listener'.
+    role = models.CharField(
+        max_length=20,
+        choices=ROLE_CHOICES,
+        default='listener'
+    )
+
+    # The __str__ method defines the human-readable text representation of a Profile object.
+    def __str__(self):
+        # Returns a friendly string displaying the owner's email and role.
+        return f"Profile for {self.user.email} ({self.role})"
+
+
+
+# --- SIGNALS SECTION ---
+# These receiver functions listen to User events to keep our profiles automatically synchronized.
+
+# create_user_profile is triggered immediately after a User instance is saved.
+@receiver(post_save, sender=User)
+def create_user_profile(sender, instance, created, **kwargs):
+    # If the user was just newly created (created=True), we build their database Profile.
+    if created:
+        # Create a new Profile record mapped directly to this new User instance.
+        Profile.objects.create(user=instance)
+
+
+# save_user_profile ensures that when a User is updated, their Profile changes are saved too.
+@receiver(post_save, sender=User)
+def save_user_profile(sender, instance, **kwargs):
+    # Save the profile mapped to this User instance.
+    instance.profile.save()
