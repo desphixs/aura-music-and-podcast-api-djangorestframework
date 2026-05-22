@@ -3,9 +3,9 @@
 # (Python objects) into clean JSON strings for our frontend to read, and vice-versa!
 from rest_framework import serializers
 
-# Import the Category, Podcast, and Track models from our current streaming app's models file.
+# Import the Category, Podcast, Track, and Rating models from our current streaming app's models file.
 # This tells our serializers exactly what database tables they will be translating.
-from streaming.models import Category, Podcast, Track
+from streaming.models import Category, Podcast, Track, Rating
 
 # Import the custom User model defined in our accounts app so we can serialize creator details.
 from django.contrib.auth import get_user_model
@@ -95,3 +95,27 @@ class PodcastSerializer(serializers.ModelSerializer):
         # We make the 'created_at' field read-only because it is automatically generated 
         # by the database and should never be modified or submitted by a user.
         read_only_fields = ['created_at']
+
+
+# RatingSerializer handles the serialization and validation of Rating objects.
+# This converts our database rating rows into clean JSON, and validates user review scores.
+class RatingSerializer(serializers.ModelSerializer):
+    class Meta:
+        # We bind this serializer directly to our Rating database model.
+        model = Rating
+        
+        # We specify the exact fields to expose inside our JSON payload for the rating.
+        # 'id' is the unique database identifier.
+        # 'score' is the integer rating score (1 to 5).
+        # 'podcast' is the foreign key ID of the podcast being rated.
+        # 'created_at' is the automatically generated timestamp.
+        fields = [
+            'id', 
+            'score', 
+            'podcast', 
+            'created_at'
+        ]
+        
+        # We make 'id' and 'created_at' read-only since they are automatically handled.
+        read_only_fields = ['id', 'created_at']
+

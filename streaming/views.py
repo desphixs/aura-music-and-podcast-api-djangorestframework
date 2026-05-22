@@ -9,11 +9,11 @@ from rest_framework.response import Response
 # Import the status module from DRF to use clear, standardized HTTP status code names.
 from rest_framework import status
 
-# Import the Podcast and Track models so we can fetch and create records from our SQLite database.
-from streaming.models import Podcast, Track
+# Import the Podcast, Track, and Rating models so we can fetch and create records from our SQLite database.
+from streaming.models import Podcast, Track, Rating
 
 # Import our serializers to translate our models to and from JSON.
-from streaming.serializers import PodcastSerializer, TrackSerializer
+from streaming.serializers import PodcastSerializer, TrackSerializer, RatingSerializer
 
 
 # PodcastListAPIView handles listing all podcasts (GET) and creating a new podcast (POST).
@@ -413,4 +413,97 @@ class TrackDetailAPIView(APIView):
         # 4. We return an HTTP 204 No Content response.
         # This is the universal success standard for deletion, representing clean closure!
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# RatingAPIView handles listeners submitting review ratings for podcasts.
+# It inherits from DRF's base APIView class.
+class RatingAPIView(APIView):
+    
+    # The POST method handles creating and saving a brand-new rating score.
+    # Ratings are restricted strictly to authenticated, logged-in listeners!
+    def post(self, request):
+        # 1. We manually enforce authentication check.
+        # Anonymous guest users are completely blocked from leaving reviews!
+        if not request.user.is_authenticated:
+            # We return a 401 Unauthorized response to tell the client to sign in.
+            return Response(
+                {"detail": "Authentication credentials were not provided."},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        # 2. We extract the podcast ID and score from the incoming request data body.
+        # This will look inside the JSON data sent by the client.
+        podcast_id = request.data.get('podcast')
+        score = request.data.get('score')
+
+        # 3. We validate that both required parameters are provided in the payload.
+        # If either is missing, we must let the client know with a 400 Bad Request.
+        if not podcast_id or score is None:
+            return Response(
+                {"detail": "Both podcast ID and score fields are required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 4. We check if the target podcast actually exists in our library database.
+        # We cannot submit a rating for a non-existent show!
+        try:
+            podcast = Podcast.objects.get(pk=podcast_id)
+        except Podcast.DoesNotExist:
+            # Return a 404 Not Found error if the podcast cannot be found in our database table.
+            return Response(
+                {"detail": "Podcast not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # 5. We validate that the score is strictly between 1 and 5.
+        # Standard reviews must be whole integers on a 1-to-5 star scale!
+        try:
+            # Convert the score to integer to make sure it's a valid numeric type.
+            score_int = int(score)
+        except (ValueError, TypeError):
+            # If they sent a non-numeric score (like "five"), reject it with a 400 Bad Request.
+            return Response(
+                {"detail": "Score must be a valid integer score."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if score_int < 1 or score_int > 5:
+            # If the score is outside the 1-to-5 boundary, we reject the request.
+            return Response(
+                {"detail": "Score must be strictly between 1 and 5."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 6. We check if a rating already exists for this logged-in user and podcast.
+        # A single member can only submit one rating review per podcast show!
+        # This checks our unique_together composite rule constraints manually.
+        rating_exists = Rating.objects.filter(user=request.user, podcast=podcast).exists()
+        if rating_exists:
+            # If a rating already exists, we reject the submit with a 400 Bad Request.
+            return Response(
+                {"detail": "You have already rated this podcast show."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 7. If all validation checks succeed, we prepare the data and save the record.
+        # We instantiate our RatingSerializer with our incoming request data.
+        serializer = RatingSerializer(data=request.data)
+        
+        # We run the serializer's validation to ensure format safety.
+        serializer.is_valid(raise_exception=True)
+        
+        # We save the rating database record back into our sqlite database filing cabinet.
+        # We pass 'user=request.user' to automatically associate this rating with the logged-in user!
+        serializer.save(user=request.user)
+
+        # 8. We return a clean, descriptive success message and the serialized JSON data.
+        # We return a 201 Created status telling the listener: "Success! Your review has been saved!"
+        return Response(
+            {
+                "message": "Rating saved successfully.",
+                "rating": serializer.data
+            }, 
+            status=status.HTTP_201_CREATED
+        )
+
 

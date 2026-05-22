@@ -7,7 +7,8 @@ from streaming.views import (
     PodcastListAPIView, 
     PodcastDetailAPIView,
     TrackListCreateAPIView,
-    TrackDetailAPIView
+    TrackDetailAPIView,
+    RatingAPIView
 )
 
 # urlpatterns defines a list of local URL patterns that this specific streaming app handles.
@@ -35,6 +36,12 @@ urlpatterns = [
     # We call '.as_view()' because TrackDetailAPIView is a Class-Based View.
     # This path is named 'track_detail' for dynamic reverse routing.
     path('tracks/<int:pk>/', TrackDetailAPIView.as_view(), name='track_detail'),
+
+    # We map 'ratings/' to our RatingAPIView.
+    # This endpoint receives POST requests containing a podcast ID and a score from logged-in listeners.
+    # We call '.as_view()' to make the Class-Based View compatible with Django's URL resolver function.
+    # This path is named 'podcast_rating' for dynamic reverse routing.
+    path('ratings/', RatingAPIView.as_view(), name='podcast_rating'),
 ]
 
 
