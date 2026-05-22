@@ -3,7 +3,11 @@
 from django.urls import path
 
 # Import our views from the current streaming app.
-from streaming.views import PodcastListAPIView, PodcastDetailAPIView
+from streaming.views import (
+    PodcastListAPIView, 
+    PodcastDetailAPIView,
+    TrackListCreateAPIView
+)
 
 # urlpatterns defines a list of local URL patterns that this specific streaming app handles.
 # This works like a localized department directory within our music/podcast streaming division.
@@ -18,5 +22,10 @@ urlpatterns = [
     # '<int:pk>' is a dynamic path converter that captures the integer ID from the URL 
     # and passes it as a keyword argument named 'pk' to our view's methods!
     path('podcasts/<int:pk>/', PodcastDetailAPIView.as_view(), name='podcast_detail'),
+
+    # We map 'podcasts/<int:podcast_id>/tracks/' to our TrackListCreateAPIView.
+    # '<int:podcast_id>' captures the specific podcast ID from the request URL, and passes it
+    # as a keyword argument named 'podcast_id' straight into our GET and POST view methods!
+    path('podcasts/<int:podcast_id>/tracks/', TrackListCreateAPIView.as_view(), name='track_list_create'),
 ]
 

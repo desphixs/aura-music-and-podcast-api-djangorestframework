@@ -9,11 +9,11 @@ from rest_framework.response import Response
 # Import the status module from DRF to use clear, standardized HTTP status code names.
 from rest_framework import status
 
-# Import the Podcast model so we can fetch and create podcast records from our SQLite database.
-from streaming.models import Podcast
+# Import the Podcast and Track models so we can fetch and create records from our SQLite database.
+from streaming.models import Podcast, Track
 
-# Import the PodcastSerializer to translate our Podcast objects to and from JSON.
-from streaming.serializers import PodcastSerializer
+# Import our serializers to translate our models to and from JSON.
+from streaming.serializers import PodcastSerializer, TrackSerializer
 
 
 # PodcastListAPIView handles listing all podcasts (GET) and creating a new podcast (POST).
@@ -203,4 +203,95 @@ class PodcastDetailAPIView(APIView):
         # This is the universal standard response for a successful deletion, 
         # telling the client: "Success! The item has been deleted, there is nothing left to show!"
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# TrackListCreateAPIView handles listing all tracks for a specific podcast (GET)
+# and uploading/creating a new track for a specific podcast (POST).
+# It inherits from DRF's APIView.
+class TrackListCreateAPIView(APIView):
+    
+    # We define a helper method to safely retrieve a specific podcast by its ID (primary key).
+    # This prevents code duplication in GET and POST methods, and ensures we can check if the podcast exists.
+    def get_podcast(self, podcast_id):
+        try:
+            # We query the database to retrieve the podcast matching the podcast_id.
+            # We use select_related('creator') so that we fetch the creator in the same database query.
+            # This is highly optimized and prevents N+1 query problems when checking ownership!
+            return Podcast.objects.select_related('creator').get(pk=podcast_id)
+        except Podcast.DoesNotExist:
+            # If the podcast does not exist in our system, we return None.
+            # This allows the calling view method to easily respond to the client with a clear 404 error.
+            return None
+
+    # The GET method lists all tracks belonging to the specified podcast.
+    # Anyone (even guest listeners) can view the track episodes of a podcast!
+    def get(self, request, podcast_id):
+        # We fetch the specific podcast using our helper method.
+        podcast = self.get_podcast(podcast_id)
+        
+        # If the podcast doesn't exist, we return a clean 404 Not Found error response.
+        if podcast is None:
+            return Response(
+                {"detail": "Podcast not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+            
+        # We query the database to get all tracks associated with this podcast.
+        # Since this podcast relation is already captured, we filter tracks by the podcast object.
+        tracks = Track.objects.filter(podcast=podcast)
+        
+        # We instantiate our TrackSerializer, passing the queryset of tracks.
+        # 'many=True' tells DRF that we are translating a list of multiple track objects.
+        serializer = TrackSerializer(tracks, many=True)
+        
+        # We return the serialized list of tracks with a 200 OK status.
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    # The POST method uploads a new track episode to the specified podcast.
+    # This action is strictly restricted to the authenticated creator who owns the podcast!
+    def post(self, request, podcast_id):
+        # 1. First, we manually check if the user is authenticated.
+        # A guest cannot upload tracks to any podcast!
+        if not request.user.is_authenticated:
+            # Return a 401 Unauthorized response if the user is anonymous.
+            return Response(
+                {"detail": "Authentication credentials were not provided."},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+            
+        # 2. Next, we retrieve the target podcast.
+        podcast = self.get_podcast(podcast_id)
+        
+        # If the podcast doesn't exist, we cannot attach a track to it! Return a 404 Not Found error.
+        if podcast is None:
+            return Response(
+                {"detail": "Podcast not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+            
+        # 3. We enforce ownership authorization.
+        # Only the creator who owns this specific podcast can add tracks to it!
+        # If the logged-in user does not match the podcast's creator, we reject them.
+        if podcast.creator != request.user:
+            # Return a 403 Forbidden status with a descriptive error message.
+            return Response(
+                {"detail": "You do not have permission to add tracks to this podcast."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+            
+        # 4. If all checks pass, we deserialize the incoming request payload.
+        # We pass the JSON data (request.data) to our TrackSerializer.
+        serializer = TrackSerializer(data=request.data)
+        
+        # 5. We validate the incoming track data.
+        # If validation fails (e.g., missing title or audio url), DRF throws an exception 
+        # and returns a clean 400 Bad Request error to the client automatically.
+        serializer.is_valid(raise_exception=True)
+        
+        # 6. We save the new track to our database filing cabinet.
+        # We pass 'podcast=podcast' to explicitly associate this track with our retrieved podcast!
+        serializer.save(podcast=podcast)
+        
+        # 7. We return the serialized JSON details of the newly created track with a 201 Created status!
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
