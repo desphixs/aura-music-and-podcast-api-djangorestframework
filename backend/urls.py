@@ -29,4 +29,11 @@ urlpatterns = [
     # will automatically be preceded by '/api/auth/'.
     # For example, our registration path becomes: 'api/auth/register/'
     path('api/auth/', include('accounts.urls')),
+
+    # We include all URL endpoints from our 'streaming' app.
+    # By prefixing this with 'api/', every url defined inside 'streaming/urls.py'
+    # will automatically be preceded by '/api/'.
+    # For example, our podcast list path becomes: 'api/podcasts/'
+    path('api/', include('streaming.urls')),
 ]
+
