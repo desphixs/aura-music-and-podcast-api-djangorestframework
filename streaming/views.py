@@ -77,3 +77,128 @@ class PodcastListAPIView(APIView):
         # 6. We return the newly created podcast details as JSON with a 201 Created status.
         # This tells the creator: "Success! Your new podcast has been created and published!"
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+# PodcastDetailAPIView handles fetching (GET), updating (PUT/PATCH), and deleting (DELETE) a single Podcast.
+# It inherits from DRF's APIView.
+class PodcastDetailAPIView(APIView):
+    
+    # We define a helper method to safely retrieve a single podcast object by its ID (primary key).
+    # This prevents code duplication in GET, PUT, and DELETE methods!
+    def get_object(self, pk):
+        try:
+            # We query the database to fetch a specific podcast matching the pk ID.
+            # select_related('creator') pre-loads the creator's user account in the same SQL query.
+            # This is an important optimization to keep our database operations extremely fast!
+            return Podcast.objects.select_related('creator').get(pk=pk)
+        except Podcast.DoesNotExist:
+            # If no podcast with this ID exists, we return None so the calling method
+            # can respond to the client with a clear 404 error cleanly.
+            return None
+
+    # We define the GET method to handle requests fetching a specific podcast's details.
+    # Anyone (even unauthenticated guests) can view a specific podcast's profile card!
+    def get(self, request, pk):
+        # We call our helper method to fetch the podcast from the SQLite cabinet.
+        podcast = self.get_object(pk)
+        
+        # We check if the podcast was found. If it returned None, we respond with a 404.
+        if podcast is None:
+            # We return an HTTP 404 Not Found error with a descriptive message.
+            return Response(
+                {"detail": "Podcast not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+            
+        # We feed the retrieved podcast database object to our PodcastSerializer.
+        serializer = PodcastSerializer(podcast)
+        
+        # We return the serialized JSON details inside a standard Response with 200 OK.
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    # We define the PUT method to handle updates to a specific podcast.
+    # Only the creator of this specific podcast is allowed to update it!
+    def put(self, request, pk):
+        # We fetch the specific podcast object using our helper method.
+        podcast = self.get_object(pk)
+        
+        # We check if the podcast exists. If not, we block the request with a 404 error.
+        if podcast is None:
+            return Response(
+                {"detail": "Podcast not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+            
+        # 1. We manually enforce authentication check.
+        # The user must be logged in to modify any data!
+        if not request.user.is_authenticated:
+            # Return 401 Unauthorized if they are anonymous.
+            return Response(
+                {"detail": "Authentication credentials were not provided."},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+            
+        # 2. We check ownership authorization (Is this user the original creator?).
+        # We compare the podcast's creator User object directly against the logged-in request.user.
+        if podcast.creator != request.user:
+            # If the user logged in is NOT the person who created this podcast, they cannot modify it!
+            # We return a 403 Forbidden status with a strict error message.
+            return Response(
+                {"detail": "You do not have permission to edit this podcast."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+            
+        # 3. If ownership is verified, we process the update.
+        # We instantiate our PodcastSerializer, feeding it both the existing podcast object 
+        # and the new request data. We pass 'partial=True' so they can update just a single 
+        # field (like description) without having to submit all fields every single time!
+        serializer = PodcastSerializer(podcast, data=request.data, partial=True)
+        
+        # 4. We run validation checks on the updated fields.
+        serializer.is_valid(raise_exception=True)
+        
+        # 5. We save the updated podcast record back into our database filing cabinet.
+        serializer.save()
+        
+        # 6. We return the fresh, updated podcast JSON details with a standard 200 OK.
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    # We define the DELETE method to handle removing a podcast completely.
+    # Only the original creator of this specific podcast is allowed to delete it!
+    def delete(self, request, pk):
+        # We query the specific podcast record using our helper.
+        podcast = self.get_object(pk)
+        
+        # We verify the podcast exists. If not, we return a 404.
+        if podcast is None:
+            return Response(
+                {"detail": "Podcast not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+            
+        # 1. We manually enforce authentication.
+        if not request.user.is_authenticated:
+            return Response(
+                {"detail": "Authentication credentials were not provided."},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+            
+        # 2. We verify ownership authorization.
+        # Only the creator of this specific show can delete it from our platform catalog.
+        if podcast.creator != request.user:
+            # Return 403 Forbidden to any user attempting to delete someone else's show.
+            return Response(
+                {"detail": "You do not have permission to delete this podcast."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+            
+        # 3. If verified, we delete the podcast record from the database.
+        # This will trigger an automatic database cascade deletion,
+        # cleanly wiping out all associated tracks and ratings linked to this podcast!
+        podcast.delete()
+        
+        # 4. We return an HTTP 204 No Content status.
+        # This is the universal standard response for a successful deletion, 
+        # telling the client: "Success! The item has been deleted, there is nothing left to show!"
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
