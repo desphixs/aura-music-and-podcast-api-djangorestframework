@@ -295,3 +295,122 @@ class TrackListCreateAPIView(APIView):
         # 7. We return the serialized JSON details of the newly created track with a 201 Created status!
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
+
+# TrackDetailAPIView handles fetching (GET), updating (PUT/PATCH), and deleting (DELETE) a single Track.
+# It inherits from DRF's APIView.
+class TrackDetailAPIView(APIView):
+    
+    # We define a helper method to safely retrieve a specific track by its ID (primary key).
+    # This prevents code duplication in GET, PUT, and DELETE methods!
+    def get_object(self, pk):
+        try:
+            # We query the database to fetch a specific track matching the pk ID.
+            # We use select_related('podcast__creator') to execute a double-level SQL JOIN.
+            # This pulls the track, its parent podcast, and the podcast's creator in a single query!
+            # This optimization keeps our database lookups incredibly fast and avoids N+1 queries.
+            return Track.objects.select_related('podcast__creator').get(pk=pk)
+        except Track.DoesNotExist:
+            # If no track with this ID exists, we return None.
+            # This allows the calling view methods to respond with a clean 404 error response cleanly.
+            return None
+
+    # The GET method handles fetching details of a specific track episode.
+    # Anyone (even unauthenticated guest listeners) can fetch a single track's profile details!
+    def get(self, request, pk):
+        # We call our helper method to fetch the track record.
+        track = self.get_object(pk)
+        
+        # If the track is not found, we respond with a clean 404 error.
+        if track is None:
+            return Response(
+                {"detail": "Track not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+            
+        # We pass our database track object into the TrackSerializer.
+        serializer = TrackSerializer(track)
+        
+        # We return the serialized track JSON details with a standard 200 OK status.
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    # The PUT method handles editing and updating a specific track episode's metadata.
+    # Editing a track is strictly locked to the creator who owns the parent podcast!
+    def put(self, request, pk):
+        # We retrieve the specific track record using our helper.
+        track = self.get_object(pk)
+        
+        # If the track doesn't exist, we return a 404 Not Found error.
+        if track is None:
+            return Response(
+                {"detail": "Track not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+            
+        # 1. We manually check if the user is authenticated.
+        # Anonymous visitors are completely blocked from editing anything!
+        if not request.user.is_authenticated:
+            return Response(
+                {"detail": "Authentication credentials were not provided."},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+            
+        # 2. We check ownership authorization.
+        # We verify if the logged-in user matches the creator who owns the track's parent podcast!
+        if track.podcast.creator != request.user:
+            # If they don't match, we immediately block the edit and return a 403 Forbidden response.
+            return Response(
+                {"detail": "You do not have permission to edit this track."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+            
+        # 3. If ownership checks pass, we deserialize the incoming request payload.
+        # We pass 'partial=True' so they can update just the title or audio url individually 
+        # without having to resubmit all fields in every PUT request!
+        serializer = TrackSerializer(track, data=request.data, partial=True)
+        
+        # 4. We run input validation.
+        # If the new details fail validation (e.g. title is blank), DRF immediately aborts
+        # and returns a clean 400 Bad Request error to the client.
+        serializer.is_valid(raise_exception=True)
+        
+        # 5. We save the updated track record back into our SQLite database.
+        serializer.save()
+        
+        # 6. We return the fresh, updated track JSON details with a standard 200 OK.
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    # The DELETE method handles completely removing a track record from our library database.
+    # Deleting a track is strictly locked to the creator who owns the parent podcast!
+    def delete(self, request, pk):
+        # We fetch the target track record.
+        track = self.get_object(pk)
+        
+        # If the track doesn't exist, we return a 404.
+        if track is None:
+            return Response(
+                {"detail": "Track not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+            
+        # 1. We manually enforce login verification.
+        if not request.user.is_authenticated:
+            return Response(
+                {"detail": "Authentication credentials were not provided."},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+            
+        # 2. We enforce ownership authorization.
+        # Only the creator of the parent show has the permissions to delete its episodes!
+        if track.podcast.creator != request.user:
+            return Response(
+                {"detail": "You do not have permission to delete this track."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+            
+        # 3. If authorized, we delete the track from SQLite.
+        track.delete()
+        
+        # 4. We return an HTTP 204 No Content response.
+        # This is the universal success standard for deletion, representing clean closure!
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
